@@ -3,8 +3,10 @@ import {
     PermissionFlagsBits,
     ChannelType,
     MessageFlags,
+    EmbedBuilder,
 } from 'discord.js';
 import { successEmbed } from '../../utils/embeds.js';
+import { getColor } from '../../config/bot.js';
 import { logEvent } from '../../utils/moderation.js';
 import { logger } from '../../utils/logger.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
@@ -32,13 +34,13 @@ function resolveTargetChannel(interaction) {
 export default {
     data: new SlashCommandBuilder()
         .setName('say')
-        .setDescription('Send a plain message as the bot')
+        .setDescription('Send a message or embed as the bot')
         .addStringOption((option) =>
             option
                 .setName('message')
                 .setDescription('The message the bot should send')
                 .setRequired(true)
-                .setMaxLength(2000),
+                .setMaxLength(4096),
         )
         .addChannelOption((option) =>
             option
@@ -46,6 +48,19 @@ export default {
                 .setDescription('Channel to send in (defaults to the current channel)')
                 .addChannelTypes(...TEXT_CHANNEL_TYPES)
                 .setRequired(false),
+        )
+        .addBooleanOption((option) =>
+            option
+                .setName('embed')
+                .setDescription('Whether to format and send this message as a Discord Rich Embed')
+                .setRequired(false),
+        )
+        .addStringOption((option) =>
+            option
+                .setName('title')
+                .setDescription('Optional title for the embed')
+                .setRequired(false)
+                .setMaxLength(256),
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
         .setDMPermission(false),
@@ -66,7 +81,10 @@ export default {
         }
 
         const rawMessage = interaction.options.getString('message');
-        const message = sanitizeInput(rawMessage, 2000);
+        const asEmbed = interaction.options.getBoolean('embed') ?? false;
+        const rawTitle = interaction.options.getString('title');
+
+        const message = sanitizeInput(rawMessage, 4096);
 
         if (!message) {
             return replyUserError(interaction, {
@@ -100,7 +118,23 @@ export default {
             });
         }
 
-        const sentMessage = await channel.send({ content: message });
+        let payload = {};
+        if (asEmbed) {
+            const embed = new EmbedBuilder()
+                .setColor(getColor('primary') || '#5865F2')
+                .setDescription(message);
+
+            if (rawTitle) {
+                const title = sanitizeInput(rawTitle, 256);
+                if (title) embed.setTitle(title);
+            }
+
+            payload = { embeds: [embed] };
+        } else {
+            payload = { content: message };
+        }
+
+        const sentMessage = await channel.send(payload);
 
         await logEvent({
             client,
