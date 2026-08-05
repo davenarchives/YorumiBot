@@ -4,6 +4,10 @@ import {
     ChannelType,
     MessageFlags,
     EmbedBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    ActionRowBuilder,
 } from 'discord.js';
 import { successEmbed } from '../../utils/embeds.js';
 import { getColor } from '../../config/bot.js';
@@ -38,8 +42,8 @@ export default {
         .addStringOption((option) =>
             option
                 .setName('message')
-                .setDescription('The message the bot should send')
-                .setRequired(true)
+                .setDescription('Message content (leave blank to open multi-line editor box)')
+                .setRequired(false)
                 .setMaxLength(4096),
         )
         .addChannelOption((option) =>
@@ -68,6 +72,47 @@ export default {
     abuseProtection: { maxAttempts: 8, windowMs: 60_000 },
 
     async execute(interaction, _config, client) {
+        const rawMessage = interaction.options.getString('message');
+        const asEmbed = interaction.options.getBoolean('embed') ?? false;
+        const rawTitle = interaction.options.getString('title');
+
+        const channel = resolveTargetChannel(interaction);
+        if (!channel) {
+            return replyUserError(interaction, {
+                type: ErrorTypes.VALIDATION,
+                message: 'Choose a text channel or run this command in one.',
+            });
+        }
+
+        // If no message passed, open Modal for multi-line input
+        if (!rawMessage) {
+            const modal = new ModalBuilder()
+                .setCustomId(`say_modal:${channel.id}:${asEmbed ? '1' : '0'}`)
+                .setTitle('Send Announcement');
+
+            const titleInput = new TextInputBuilder()
+                .setCustomId('say_title')
+                .setLabel('Embed Title (Optional)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g. Yorumi v4.0.1 - Announcement')
+                .setValue(rawTitle || '')
+                .setRequired(false);
+
+            const messageInput = new TextInputBuilder()
+                .setCustomId('say_message')
+                .setLabel('Announcement Content (Multi-line supported)')
+                .setStyle(TextInputStyle.Paragraph)
+                .setPlaceholder('Paste multi-line text, blockquotes (>), bold, emojis, etc.')
+                .setRequired(true);
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(titleInput),
+                new ActionRowBuilder().addComponents(messageInput),
+            );
+
+            return await interaction.showModal(modal);
+        }
+
         const deferSuccess = await InteractionHelper.safeDefer(interaction, {
             flags: MessageFlags.Ephemeral,
         });
@@ -80,24 +125,12 @@ export default {
             return;
         }
 
-        const rawMessage = interaction.options.getString('message');
-        const asEmbed = interaction.options.getBoolean('embed') ?? false;
-        const rawTitle = interaction.options.getString('title');
-
         const message = sanitizeInput(rawMessage, 4096);
 
         if (!message) {
             return replyUserError(interaction, {
                 type: ErrorTypes.VALIDATION,
                 message: 'Message cannot be empty.',
-            });
-        }
-
-        const channel = resolveTargetChannel(interaction);
-        if (!channel) {
-            return replyUserError(interaction, {
-                type: ErrorTypes.VALIDATION,
-                message: 'Choose a text channel or run this command in one.',
             });
         }
 
