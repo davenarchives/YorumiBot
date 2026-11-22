@@ -475,14 +475,24 @@ class TitanBot extends Client {
       const username = String(verifiedUser?.username || req.body?.username || 'Yorumi User').trim().slice(0, 32) || 'Yorumi User';
       const avatarUrl = verifiedUser?.avatar || undefined;
       const content = String(req.body?.content || '').trim().slice(0, 500);
-      const nowWatching = String(req.body?.nowWatching || '').trim().slice(0, 100);
+      const rawNowWatching = req.body?.nowWatching;
+      let nowWatching = undefined;
+      if (rawNowWatching && typeof rawNowWatching === 'object') {
+        const label = String(rawNowWatching.label || '').trim().slice(0, 120);
+        const route = String(rawNowWatching.route || '').trim().slice(0, 200);
+        if (label) {
+          nowWatching = route && route.startsWith('/anime/details/') ? { label, route } : { label };
+        }
+      } else if (typeof rawNowWatching === 'string' && rawNowWatching.trim()) {
+        nowWatching = { label: rawNowWatching.trim().slice(0, 120) };
+      }
       if (!content) {
         return res.status(400).json({ error: 'Message content is required' });
       }
       if (nowWatching) {
         const key = `${username}::${content}`;
         recentNowWatchingByContent.set(key, nowWatching);
-        setTimeout(() => recentNowWatchingByContent.delete(key), 60_000);
+        setTimeout(() => recentNowWatchingByContent.delete(key), 60 * 60 * 1000);
       }
       try {
         const response = await fetch(globalChatWebhookUrl, {
