@@ -112,6 +112,7 @@ class TitanBot extends Client {
 
   startWebServer() {
     const app = express();
+    app.set('trust proxy', 1);
     app.use(express.json({ limit: '32kb' }));
     const configuredPort = Number(this.config.api?.port || process.env.PORT || 3000);
     const maxPortRetryAttempts = Number(process.env.PORT_RETRY_ATTEMPTS || 5);
@@ -139,6 +140,15 @@ class TitanBot extends Client {
     const maxRequests = this.config.api?.rateLimit?.max || 100;
     
     app.use((req, res, next) => {
+      if (
+        req.path === '/health' ||
+        req.path === '/ready' ||
+        req.path === '/chat/stream' ||
+        req.path === '/chat/history' ||
+        req.path.startsWith('/auth/discord/')
+      ) {
+        return next();
+      }
       const ip = req.ip;
       const now = Date.now();
       const windowStart = now - windowMs;
