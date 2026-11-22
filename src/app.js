@@ -1,4 +1,4 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import { REST } from '@discordjs/rest';
 import express from 'express';
@@ -111,6 +111,7 @@ class TitanBot extends Client {
 
   startWebServer() {
     const app = express();
+    app.use(express.json({ limit: '32kb' }));
     const configuredPort = Number(this.config.api?.port || process.env.PORT || 3000);
     const maxPortRetryAttempts = Number(process.env.PORT_RETRY_ATTEMPTS || 5);
     const host = process.env.WEB_HOST || '0.0.0.0';
@@ -208,6 +209,112 @@ class TitanBot extends Client {
         version: pkg.version,
         timestamp: new Date().toISOString()
       });
+    });
+
+    // Yorumi Global Chat Bridge (Discord Channel <-> Yorumi App)
+    const globalChatChannelId = (process.env.GLOBAL_CHAT_CHANNEL_ID || '').trim();
+    const globalChatWebhookUrl = (process.env.GLOBAL_CHAT_WEBHOOK_URL || '').trim();
+    const sseClients = new Set();
+
+    const formatChatMessage = (msg) => ({
+      id: msg.id,
+      author: msg.member?.displayName || msg.author?.globalName || msg.author?.username || 'Discord User',
+      avatar: typeof msg.author?.displayAvatarURL === 'function' ? msg.author.displayAvatarURL({ size: 64 }) : undefined,
+      content: msg.content || '',
+      timestamp: msg.createdTimestamp || Date.now(),
+      fromDiscord: !msg.webhookId,
+    });
+
+    if (globalChatChannelId) {
+      this.on('messageCreate', (msg) => {
+        if (msg.channelId !== globalChatChannelId || !msg.content?.trim()) return;
+        const payload = `data: ${JSON.stringify(formatChatMessage(msg))}\n\n`;
+        for (const clientRes of sseClients) {
+          try {
+            clientRes.write(payload);
+          } catch {
+            sseClients.delete(clientRes);
+          }
+        }
+      });
+    }
+
+    app.get('/chat/history', async (req, res) => {
+      if (!globalChatChannelId) {
+        return res.status(503).json({ error: 'GLOBAL_CHAT_CHANNEL_ID is not configured' });
+      }
+      if (!this.isReady()) {
+        return res.status(503).json({ error: 'Bot is still connecting to Discord' });
+      }
+      try {
+        const channel = await this.channels.fetch(globalChatChannelId);
+        if (!channel || !channel.isTextBased()) {
+          return res.status(404).json({ error: 'Global chat channel not found' });
+        }
+        const fetched = await channel.messages.fetch({ limit: 50 });
+        const messages = [...fetched.values()]
+          .filter((m) => m.content?.trim())
+          .reverse()
+          .map(formatChatMessage);
+        return res.status(200).json({ messages });
+      } catch (error) {
+        logger.error('[GlobalChat] Failed to fetch history:', error);
+        return res.status(500).json({ error: 'Failed to fetch chat history' });
+      }
+    });
+
+    app.get('/chat/stream', (req, res) => {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders?.();
+      sseClients.add(res);
+
+      const heartbeat = setInterval(() => {
+        try {
+          res.write(': ping\n\n');
+        } catch {
+          clearInterval(heartbeat);
+          sseClients.delete(res);
+        }
+      }, 25000);
+
+      req.on('close', () => {
+        clearInterval(heartbeat);
+        sseClients.delete(res);
+      });
+    });
+
+    app.post('/chat/send', async (req, res) => {
+      if (!globalChatWebhookUrl) {
+        return res.status(503).json({ error: 'GLOBAL_CHAT_WEBHOOK_URL is not configured' });
+      }
+      const username = String(req.body?.username || 'Yorumi User').trim().slice(0, 32) || 'Yorumi User';
+      const content = String(req.body?.content || '').trim().slice(0, 500);
+      if (!content) {
+        return res.status(400).json({ error: 'Message content is required' });
+      }
+      try {
+        const response = await fetch(globalChatWebhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            content,
+            allowed_mentions: { parse: [] },
+          }),
+        });
+        if (!response.ok) {
+          const errBody = await response.text().catch(() => '');
+          logger.warn(`[GlobalChat] Webhook error (${response.status}): ${errBody}`);
+          return res.status(502).json({ error: 'Failed to deliver message to Discord' });
+        }
+        return res.status(200).json({ ok: true });
+      } catch (error) {
+        logger.error('[GlobalChat] Failed to send message:', error);
+        return res.status(500).json({ error: 'Failed to send message' });
+      }
     });
 
     const startServer = (port, attempt = 0) => {
