@@ -114,7 +114,12 @@ class TitanBot extends Client {
   startWebServer() {
     const app = express();
     app.set('trust proxy', 1);
-    app.use(express.json({ limit: '32kb' }));
+    app.use((req, res, next) => {
+      if (req.path.startsWith('/api/sync')) {
+        return express.json({ limit: '2mb' })(req, res, next);
+      }
+      return express.json({ limit: '32kb' })(req, res, next);
+    });
     const configuredPort = Number(this.config.api?.port || process.env.PORT || 3000);
     const maxPortRetryAttempts = Number(process.env.PORT_RETRY_ATTEMPTS || 5);
     const host = process.env.WEB_HOST || '0.0.0.0';
