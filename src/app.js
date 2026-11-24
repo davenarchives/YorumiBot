@@ -18,6 +18,7 @@ import { initializeMusic } from './services/music/riffySetup.js';
 import { shutdownMusic } from './services/music/playerHandler.js';
 import pkg from '../package.json' with { type: 'json' };
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SCHEMA_LABEL } from './config/database/schemaVersion.js';
+import { createYorumiSyncRouter } from './services/yorumiSyncService.js';
 
 class TitanBot extends Client {
   constructor() {
@@ -126,7 +127,7 @@ class TitanBot extends Client {
       if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
         res.header('Access-Control-Allow-Origin', origin || '*');
       }
-      res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
       
       if (req.method === 'OPTIONS') {
@@ -145,6 +146,7 @@ class TitanBot extends Client {
         req.path === '/ready' ||
         req.path === '/chat/stream' ||
         req.path === '/chat/history' ||
+        req.path === '/api/sync/health' ||
         req.path.startsWith('/auth/discord/')
       ) {
         return next();
@@ -344,6 +346,19 @@ class TitanBot extends Client {
       pendingAuthSessions.delete(state);
       return res.status(200).json({ ready: true, token: session.token, user: session.user });
     });
+
+    app.get('/auth/discord/me', (req, res) => {
+      const authHeader = String(req.headers.authorization || '').trim();
+      const match = authHeader.match(/^Bearer\s+(.+)$/i);
+      const token = match?.[1]?.trim() || '';
+      const user = verifyChatToken(token);
+      if (!user) {
+        return res.status(401).json({ error: 'Invalid or missing Discord session token' });
+      }
+      return res.status(200).json({ user });
+    });
+
+    app.use('/api/sync', createYorumiSyncRouter(verifyChatToken));
 
     const getOnlineCount = () => {
       let discordOnline = 0;
