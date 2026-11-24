@@ -86,8 +86,10 @@ const mapRowToPublicProfile = (row) => {
     creationTime,
     watchList: Array.isArray(p.yorumi_watch_list) ? p.yorumi_watch_list : [],
     readList: Array.isArray(p.yorumi_read_list) ? p.yorumi_read_list : [],
+    lnReadList: Array.isArray(p.yorumi_ln_read_list_v1) ? p.yorumi_ln_read_list_v1 : [],
     continueWatching: Array.isArray(p.yorumi_continue_watching) ? p.yorumi_continue_watching : [],
     continueReading: Array.isArray(p.yorumi_continue_reading) ? p.yorumi_continue_reading : [],
+    continueLN: Array.isArray(p.yorumi_ln_continue_reading_v1) ? p.yorumi_ln_continue_reading_v1 : [],
     episodeHistory: p.yorumi_episode_history && typeof p.yorumi_episode_history === 'object' ? p.yorumi_episode_history : {},
     chapterHistory: p.yorumi_chapter_history && typeof p.yorumi_chapter_history === 'object' ? p.yorumi_chapter_history : {},
     animeWatchTime: p.yorumi_anime_watch_time && typeof p.yorumi_anime_watch_time === 'object' ? p.yorumi_anime_watch_time : {},
@@ -99,6 +101,8 @@ const mapRowToPublicProfile = (row) => {
     activityHistory: p.yorumi_activity_history && typeof p.yorumi_activity_history === 'object' ? p.yorumi_activity_history : {},
     favoriteAnime: Array.isArray(p.yorumi_favorite_anime) ? p.yorumi_favorite_anime : [],
     favoriteManga: Array.isArray(p.yorumi_favorite_manga) ? p.yorumi_favorite_manga : [],
+    favoriteLN: Array.isArray(p.yorumi_favorite_ln) ? p.yorumi_favorite_ln : [],
+    libraryCategories: p.yorumi_library_categories_v1 && typeof p.yorumi_library_categories_v1 === 'object' ? p.yorumi_library_categories_v1 : undefined,
   };
 };
 
